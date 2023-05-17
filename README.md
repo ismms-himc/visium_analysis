@@ -10,7 +10,7 @@ distance from area of interest. It works outside the defined area and inside, so
 you can assess core of the area. It also plots the composition of neighborhood.
 
 2. Second block, **deconvolution**, utilizes deconvolution results, specifically 
-matrix from [cell2location] (https://doi.org/10.1038/s41587-021-01139-4), though it
+matrix from [cell2location](https://doi.org/10.1038/s41587-021-01139-4), though it
 can be any tool, to calculate PCA, UMAP and compare to gene expression results.
 If you have nicely structurally-resolved compartment, like immune aggregates, you can 
 assess the difference between them by: 
@@ -19,6 +19,6 @@ assess the difference between them by:
 - calculating cell-cell interaction inside immune aggregates and 
 comparing top expressed receptor-ligand pairs.
 
-3. Third block, **decoupler**, calculates [PROGENy] (https://doi.org/10.1038/s41467-017-02391-6), 
-[DoRothEA] (doi:10.1101/gr.240663.118), [CytoSig] (https://doi.org/10.1038/s41592-021-01274-5)
- and [MSigDB] (https://doi.org/10.1073/pnas.0506580102) collections on all spots.
+3. Third block, **decoupler**, calculates [PROGENy](https://doi.org/10.1038/s41467-017-02391-6), 
+[DoRothEA](doi:10.1101/gr.240663.118), [CytoSig](https://doi.org/10.1038/s41592-021-01274-5)
+ and [MSigDB](https://doi.org/10.1073/pnas.0506580102) collections on all spots.
