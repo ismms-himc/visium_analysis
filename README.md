@@ -20,5 +20,6 @@ assess the difference between them by:
 comparing top expressed receptor-ligand pairs.
 
 3. Third block, **decoupler**, calculates [PROGENy](https://doi.org/10.1038/s41467-017-02391-6), 
-[DoRothEA](doi:10.1101/gr.240663.118), [CytoSig](https://doi.org/10.1038/s41592-021-01274-5)
- and [MSigDB](https://doi.org/10.1073/pnas.0506580102) collections on all spots.
+[DoRothEA](https://doi.org/10.1101%2Fgr.240663.118), 
+[CytoSig](https://doi.org/10.1038/s41592-021-01274-5) and 
+[MSigDB](https://doi.org/10.1073/pnas.0506580102) collections on all spots.
