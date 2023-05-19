@@ -56,6 +56,9 @@ def gen_neighborhood(n: int,
         + np.square(all_spot_coords[:, 1]-center_y)
         filt_coords=all_spot_coords[dist < radius**2]
         # slow
+        # fast implementation with numba and hashing coordinates
+        # https://stackoverflow.com/questions/66674537/python-numpy\
+        # -get-difference-between-2-two-dimensional-array
         new_spots=subtract_2dcoordinates(filt_coords,test_spots)
         neighborhood.update(tuple(coord) for coord in new_spots)
     neighborhood=np.array(list(neighborhood))
