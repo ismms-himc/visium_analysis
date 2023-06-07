@@ -24,6 +24,7 @@ def gen_spot_circle(spot: np.array,
 
 def gen_neighborhood(n: int, 
                      test_spots: np.array,
+                     test_spots_bool: np.array,
                      all_spot_coords: np.array) -> np.array:
     '''
     Return a np.array of [x, y] coordinates of neighbors 
@@ -37,37 +38,36 @@ def gen_neighborhood(n: int,
         that are two layers away from test spots.
     test_spots : np.array
         [x, y] coordinates of spots of interest.
+    test_spots_bool: np.array
+        bool array of spots of interest.
     all_spot_coords : np.array
         [x, y] coordinates of all spots.
 
     Returns:
     --------
     np.array
-        [x, y] coordinates of neighbors within a certain distance.
+        bool array of neighbors within a certain distance.
     '''
 
     if n == 0:
-        return test_spots
+        return test_spots_bool
 
-    neighborhood = set()
+    ngh=np.empty((0,len(all_spot_coords)), dtype=bool)
     for spot in test_spots:
         center_x, center_y, radius = gen_spot_circle(spot, n)
         dist = np.square(all_spot_coords[:, 0]-center_x) \
         + np.square(all_spot_coords[:, 1]-center_y)
-        filt_coords=all_spot_coords[dist < radius**2]
-        # slow
-        # fast implementation with numba and hashing coordinates
-        # https://stackoverflow.com/questions/66674537/python-numpy\
-        # -get-difference-between-2-two-dimensional-array
-        new_spots=subtract_2dcoordinates(filt_coords,test_spots)
-        neighborhood.update(tuple(coord) for coord in new_spots)
-    neighborhood=np.array(list(neighborhood))
+        filt_coords=dist<radius**2
+        filt_coords=filt_coords & ~test_spots_bool
+        ngh = np.append(ngh, [filt_coords], axis=0)
+    neighborhood=np.any(ngh, axis=0)
     
     return neighborhood
 
 def gen_neighborhood_nc(adata: anndata.AnnData,
                         n: int,
                         test_spots: np.array,
+                        test_spots_bool: np.array,
                         all_spot_coords: np.array) -> np.array:
     '''
     Returns list of [x,y] coordinates of noncumulative (one layer) neighbors.
@@ -80,18 +80,20 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
         Number of layers of interest. For example, 2.
     test_spots : np.array
         [x, y] coordinates of spots of interest.
+    test_spots_bool: np.array
+        bool array of spots of interest.
     all_spot_coords : np.array
         [x, y] coordinates of all spots.
     
     Returns:
     --------
     np.array
-        [x, y] coordinates of noncumulative (one layer) neighbors.
+        bool array of noncumulative (one layer) neighbors.
     '''
     
     if n==0: 
-        add_neighborhood2obs(adata,f'{n}_c',test_spots)
-        return test_spots
+        add_neighborhood2obs(adata,f'{n}_c',test_spots_bool)
+        return test_spots_bool
     
     # check if cumulative neighborhood at this distance is already calculated
     try:
@@ -99,19 +101,18 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
         print(f'Cumulative neighborhood at the {n*100} micrometers '\
         'distance is already calculated.')
         cur_calc=adata.obs[f'neighborhood_{n}_c']
-        cur_neighbors=\
-        adata[cur_calc[cur_calc=='neighbor'].index].obsm['spatial']
+        cur_neighbors=(cur_calc=='neighbor').values
     except:
         print(f'Cumulative neighborhood at the {n*100} micrometers '\
         'distance is not calculated. Running it now.')
-        cur_neighbors=gen_neighborhood(n,test_spots,all_spot_coords)
+        cur_neighbors=gen_neighborhood(n,test_spots,
+                                       test_spots_bool,all_spot_coords)
         add_neighborhood2obs(adata,f'{n}_c',cur_neighbors)
     
     prev_calc=adata.obs[f'neighborhood_{n-1}_c']
-    previous_neighbors=\
-    adata[prev_calc[prev_calc=='neighbor'].index].obsm['spatial']
+    previous_neighbors=(prev_calc=='neighbor').values
+    r=cur_neighbors & ~previous_neighbors
     
-    r=subtract_2dcoordinates(cur_neighbors,previous_neighbors)
     return r
     
 def clc_ngh(adata: anndata.AnnData,
@@ -178,12 +179,16 @@ def clc_ngh(adata: anndata.AnnData,
 
     # generating and adding neighborhoods to adata
     test_spots=np.array(adata[adata.obs[cat]==celltype].obsm['spatial'])
+    test_spots_bool=(adata.obs[cat]==celltype).values
     all_spot_coords=np.array(adata.obsm['spatial'])
     for j in tqdm.tqdm(range(start,n+1)):
         if noncumulative:
             neighborhood=gen_neighborhood_nc(adata,j,test_spots,
+                                             test_spots_bool,
                                              all_spot_coords)
-        else: neighborhood=gen_neighborhood(j,test_spots,all_spot_coords)
+        else: neighborhood=gen_neighborhood(j,test_spots,
+                                            test_spots_bool,
+                                            all_spot_coords)
         add_neighborhood2obs(adata,f'{j}{typ}',neighborhood)
     
     if return_adata: return adata
@@ -270,6 +275,7 @@ def calc_neighborhood(adata: anndata.AnnData,
 
 def gen_intraneighborhood(adata: anndata.AnnData,
                           test_spots: np.array,
+                          test_spots_bool: np.array,
                           n: int,
                           sample: Union[str,None]=None) -> np.array:
     '''
@@ -282,6 +288,8 @@ def gen_intraneighborhood(adata: anndata.AnnData,
         AnnData with one visium image.
     test_spots : np.array
         [x,y] coordinates of spots of interest.
+    test_spots_bool: np.array
+        bool array of spots of interest.
     n : int
         Number of layers of interest. For example 2.
     sample : str, optional (default: `None`)
@@ -290,42 +298,53 @@ def gen_intraneighborhood(adata: anndata.AnnData,
     Returns:
     --------
     np.array
-        [x,y] coordinates of intra-neighbors.
+        bool array of intra-neighbors.
     '''
+    
+    all_spot_coords=np.array(adata.obsm['spatial'])
     
     if sample is None: suffix=''
     else: suffix=f'_{sample}'
     
     # start from the nth layer from the outer layer
-    if n==0: return test_spots
+    if n==0: return test_spots_bool
     if n>1:
-        prev_spots=np.empty((1,2))
+        # collect previous neighbors
+        prev_spots=np.empty((0,len(adata.obs_names)), dtype=bool)
         for i in range(1,n):
             i=f'-{i}'
-            prev_spots=\
-            np.append(prev_spots,np.array(
-                adata[adata.obs[f'neighborhood_{i}_intra{suffix}']=='neighbor']\
-            .obsm['spatial']), axis=0
-            )
-        test_spots=subtract_2dcoordinates(test_spots,prev_spots)
+            prev_row=\
+            (adata.obs[f'neighborhood_{i}_intra{suffix}']=='neighbor').values
+            prev_spots=np.append(prev_spots, [prev_row], axis=0)
+        prev_spots=np.any(prev_spots, axis=0)
+        # subtract previous neighbors from current ones
+        test_spots_bool=test_spots_bool & ~prev_spots
             
     # if you eventually got to the core on the previous step
     # do not calculate further
-    if len(test_spots)==0: return []
-    
-    neighborhood=set()
+    if len(test_spots_bool[test_spots_bool==True])==0: return []
+
+    test_spots=np.array(adata.obsm['spatial'])[test_spots_bool]
+
+    neighborhood=np.empty(0, dtype=int)
     for spot in test_spots:
         center_x, center_y, radius = gen_spot_circle(spot,1)
         # test each spot vs `test spots`
         dist = np.square(test_spots[:, 0]-center_x) \
         + np.square(test_spots[:, 1]-center_y)
         # sum all neighbors from `test spots`
-        counts=np.sum(np.less(dist,radius**2))
-        # if spot has less than 6 neighbors from the `test spots`
-        # than this spot at the border
-        if counts < 6: neighborhood.add(tuple(spot))
+        neighborhood=\
+        np.append(neighborhood, 
+                  np.sum(np.less(dist,radius**2)))
+    # if spot has less than 6 neighbors from the `test spots`
+    # than this spot at the border
+    neighborhood=np.where(neighborhood<6, True, False)
+    # write results to all-spots-length array
+    true_indices = np.where(test_spots_bool)[0]
+    newngh = test_spots_bool.copy()
+    newngh[true_indices] = neighborhood
 
-    return np.array(list(neighborhood))
+    return newngh
 
 def clc_intrangh(adata: anndata.AnnData,
                  cat: str,
@@ -375,8 +394,10 @@ def clc_intrangh(adata: anndata.AnnData,
 
     # generating and adding neighborhoods to adata
     test_spots=np.array(adata[adata.obs[cat]==celltype].obsm['spatial'])
+    test_spots_bool=(adata.obs[cat]==celltype).values
     for j in tqdm.tqdm(range(start,n+1)):
-        neighborhood=gen_intraneighborhood(adata,test_spots,j,sample)
+        neighborhood=gen_intraneighborhood(adata,test_spots,
+                                           test_spots_bool,j,sample)
         # check when to stop
         # if you reach core in the previous step
         if len(neighborhood)==0: 
@@ -534,30 +555,19 @@ def add_neighborhood2obs(adata: anndata.AnnData,
     n : int
         The index of the neighborhood.
     neighborhood : np.array
-        [x,y] coordinates that belong to the neighborhood.
+        bool array of the neighborhood.
 
     Returns:
     --------
     None.
     '''
     
-    x=np.array(adata.obsm['spatial'])
-    y=neighborhood
-
-    # get indexes of neighbors by coordinates
-    # speed-up?
-    neighbor=adata.obs_names[np.any(
-        np.all(x[:, None, :] == y,axis=2
-              ),axis=1)].tolist()
-    notneighbor=list(set(adata.obs_names)-set(neighbor))
-    
     adata.obs[f'neighborhood_{n}']=\
-    pd.Series(index=neighbor+notneighbor,
-              data=['neighbor']*len(neighbor)+['not neighbor']*len(notneighbor))\
-    .reindex(adata.obs_names)
+    pd.Series(index=adata.obs_names,
+              data=np.where(neighborhood,'neighbor','not neighbor'))
+
     print(f'Coordinates of neighbors are added '\
     f'in adata.obs[\'neighborhood_{n}\']')
-#     print(f'Coordinates for neighborhood_{n} are added.')
     
 def subtract_2dcoordinates(cur: np.array, 
                            prev: np.array) -> np.array: 
