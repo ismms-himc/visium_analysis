@@ -32,12 +32,27 @@ def get_optimal_num_clusters(adata: anndata.AnnData) -> anndata.AnnData:
     anndata.AnnData
         AnnData with calculated Leiden clustering.
     '''
-    
+
+    ncl=[]
+    ress=[]
     for i in [j/10 for j in range(1,11,1)]:
         adata_tmp=sc.tl.leiden(adata,resolution=i,copy=True)
         num_cl=len(adata_tmp.obs['leiden'].unique())
+        ncl.append(num_cl)
+        ress.append(i)
         if 9<=num_cl<=11: break
-    print(f'Optimal number of leiden clusters {num_cl}, res={i}')
+    # if we didn't find anything then pick something
+    # that has less than 9 clusters. usually it's 7 or 8
+    if num_cl>11: 
+        for i in range(8,0,-1):
+            if i in ncl: cl=i; break
+        for i,j in zip(ncl,ress):
+            if i==cl: num_cl=i; res=j
+        adata_tmp=sc.tl.leiden(adata,resolution=res,copy=True)
+        print(f'Optimal number of leiden clusters {num_cl}, res={res}')
+    # if we did find 9<=resolution<=11 then just return computed adata_tmp
+    else:
+        print(f'Optimal number of leiden clusters {num_cl}, res={i}')
     return adata_tmp
 
 def calc_leiden(adata: anndata.AnnData,
