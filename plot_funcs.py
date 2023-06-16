@@ -73,6 +73,8 @@ def plot_spatial_scatter(adata: anndata.AnnData,
                               size=size,cmap=cmap,
                               wspace=.2,ncols=len(colors))
         return None
+
+    colors_common=[i for i in colors if 'neighborhood' not in i]
     
     for sample in sample_list:
         cols=[]
@@ -90,7 +92,9 @@ def plot_spatial_scatter(adata: anndata.AnnData,
                 unique_values=adatatmp.obs[i].dropna()
                 if len(unique_values)!=0: cols.append(i)
             except: 
-                cols.append(i)
+                pass
+        cols=colors_common+[i for i in cols if i.endswith(sample)]
+     
         sq.pl.spatial_scatter(adatatmp,color=cols,
                               library_key=sample_obs_key,
                               img_res_key='lowres',wspace=.2,
