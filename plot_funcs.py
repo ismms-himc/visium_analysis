@@ -7,7 +7,7 @@ import seaborn as sns
 import squidpy as sq
 import matplotlib.pyplot as plt
 
-from distance import prepare_ngh_composition,uns2obs,process_ngh_colors
+from distance import prepare_ngh_composition#,uns2obs,process_ngh_colors
 
 from typing import Tuple,List,Optional,Union
 
@@ -74,7 +74,8 @@ def plot_spatial_scatter(adata: anndata.AnnData,
                               wspace=.2,ncols=len(colors))
         return None
 
-    colors_common=[i for i in colors if 'neighborhood' not in i]
+    colors_common=[i for i in colors if ('neighborhood' not in i) \
+                   and ('leiden' not in i)]
     
     for sample in sample_list:
         cols=[]
