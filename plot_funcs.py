@@ -160,13 +160,15 @@ def plot_clusters_composition(adata: anndata.AnnData,
     n=len(clusters)
     _,axs=plt.subplots(nrows=n,ncols=1,
                        figsize=(.2*len(deconv.columns),3*n+n),
-                       sharex=True)
+                       sharex=False)
     for ax,i in tqdm.tqdm(zip(axs.flatten(),clusters),total=n):
         adatatmp=adata.obs[group_name][adata.obs[group_name]==i].index
         z=deconv.reindex(adatatmp)
         if normalize: z=z.astype(float)/z.sum(axis=1).mean()
         z.boxplot(ax=ax,rot=90,grid=False,flierprops={'markeredgewidth':.5})
+        ax.set_xticklabels([])
         ax.set_title(i)
+    ax.set_xticklabels(z.columns)
     plt.show()
     
 def plot_ngh_cmps(adata: anndata.AnnData,
