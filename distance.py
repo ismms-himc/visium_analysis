@@ -336,9 +336,10 @@ def gen_intraneighborhood(adata: anndata.AnnData,
         neighborhood=\
         np.append(neighborhood, 
                   np.sum(np.less(dist,radius**2)))
-    # if spot has less than 6 neighbors from the `test spots`
-    # than this spot at the border
-    neighborhood=np.where(neighborhood<6, True, False)
+    # if spot has less than 6 neighbors from the `test_spots`
+    # than this spot at the border. we write 7, because
+    # the spot of interest itself is counted also in `test_spots`
+    neighborhood=np.where(neighborhood<7, True, False)
     # write results to all-spots-length array
     true_indices = np.where(test_spots_bool)[0]
     newngh = test_spots_bool.copy()
