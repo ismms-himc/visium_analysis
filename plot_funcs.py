@@ -21,6 +21,7 @@ def plot_spatial_scatter(adata: anndata.AnnData,
                          sample_obs_key: Union[str,None],
                          samples: Union[List,None]=None,
                          decoupler_params: bool=False,
+			 figsize: tuple=(10,10),
                          *args) -> None:
     '''
     Plot spatial scatter plots for any specified .obs keys as *args.
@@ -39,6 +40,9 @@ def plot_spatial_scatter(adata: anndata.AnnData,
     decoupler_params : bool, optional (Default is `False`)
         If `True`, applied `coolwarm` cmap 
         and  enlarged size of spots for decoupler output.
+    figsize: tuple, optional (Default is (10,10))
+	figsize like in squidpy.pl.spatial_scatter.
+        For example (7,7).
     args : *args
         Any .obs keys delimited by comma or passed as *list. 
         For example 'pathologist_annotation', 'denselabels' 
@@ -100,7 +104,7 @@ def plot_spatial_scatter(adata: anndata.AnnData,
                               library_key=sample_obs_key,
                               img_res_key='lowres',wspace=.2,
                               size=size,cmap=cmap,
-                              ncols=len(cols))
+                              ncols=len(cols),figsize=figsize)
         
 def clustermap_of_activities(acts_gr: anndata.AnnData) -> None:
     '''
@@ -204,6 +208,11 @@ def plot_ngh_cmps(adata: anndata.AnnData,
 
     all_dists=dst_df.columns.get_level_values(0).unique()
 
+    # check if sample does not have celltype in the sample
+    if len(all_dists)==0:
+        print(f'{sample} does not have calculated distance for this celltype.')
+        return None
+
     plt.figure(figsize=(len(all_dists)/1.5,5))
     leg=[]
     for i in sbtps:
@@ -214,6 +223,7 @@ def plot_ngh_cmps(adata: anndata.AnnData,
     plt.xticks(all_dists,[i*100 for i in all_dists])
     plt.xlabel('Distance, micrometers')
     plt.ylabel('Mean number of cells')
+    plt.title(f'{sample}')
 
     for i in sbtps:
         ymin=dst_df.iloc[:,dst_df.columns.get_level_values(1)==i].quantile(.25)
