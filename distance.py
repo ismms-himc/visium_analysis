@@ -15,9 +15,13 @@ plt.rcParams['axes.grid'] = False
 plt.rcParams['figure.figsize'] = (5,5)
 
 def gen_spot_circle(spot: np.array,
-                    n: int) -> Tuple[int,int,float]:    
-    spot_distance=100*n
-    error=20/n
+                    spot_scalefactor: float,
+                    n: int) -> Tuple[int,int,float]:
+    # 100 is the theoritcal distance between centers of spots
+    spot_distance=100*spot_scalefactor*n
+    # introduce a small error, because of technical issues
+    # in spaceranger
+    error=20*spot_scalefactor/n
     center_x,center_y=spot[0],spot[1]
     radius=spot_distance+error
     return center_x,center_y,radius
@@ -25,7 +29,8 @@ def gen_spot_circle(spot: np.array,
 def gen_neighborhood(n: int, 
                      test_spots: np.array,
                      test_spots_bool: np.array,
-                     all_spot_coords: np.array) -> np.array:
+                     all_spot_coords: np.array,
+                     spot_scalefactor: float) -> np.array:
     '''
     Return a np.array of [x, y] coordinates of neighbors 
     within a certain distance.
@@ -42,6 +47,8 @@ def gen_neighborhood(n: int,
         bool array of spots of interest.
     all_spot_coords : np.array
         [x, y] coordinates of all spots.
+    spot_scalefactor: float
+        ratio of spot_diameter_fullres in .uns and 65 micrometers.
 
     Returns:
     --------
@@ -54,7 +61,7 @@ def gen_neighborhood(n: int,
 
     ngh=np.empty((0,len(all_spot_coords)), dtype=bool)
     for spot in test_spots:
-        center_x, center_y, radius = gen_spot_circle(spot, n)
+        center_x, center_y, radius = gen_spot_circle(spot,spot_scalefactor,n)
         dist = np.square(all_spot_coords[:, 0]-center_x) \
         + np.square(all_spot_coords[:, 1]-center_y)
         filt_coords=dist<radius**2
@@ -68,7 +75,8 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
                         n: int,
                         test_spots: np.array,
                         test_spots_bool: np.array,
-                        all_spot_coords: np.array) -> np.array:
+                        all_spot_coords: np.array,
+                        spot_scalefactor: float) -> np.array:
     '''
     Returns list of [x,y] coordinates of noncumulative (one layer) neighbors.
     
@@ -84,8 +92,9 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
         bool array of spots of interest.
     all_spot_coords : np.array
         [x, y] coordinates of all spots.
-    
-    Returns:
+    spot_scalefactor: float                                          
+        ratio of spot_diameter_fullres in .uns and 65 micrometers.
+
     --------
     np.array
         bool array of noncumulative (one layer) neighbors.
@@ -106,7 +115,9 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
         print(f'Cumulative neighborhood at the {n*100} micrometers '\
         'distance is not calculated. Running it now.')
         cur_neighbors=gen_neighborhood(n,test_spots,
-                                       test_spots_bool,all_spot_coords)
+                                       test_spots_bool,
+				       all_spot_coords,
+				       spot_scalefactor)
         add_neighborhood2obs(adata,f'{n}_c',cur_neighbors)
     
     prev_calc=adata.obs[f'neighborhood_{n-1}_c']
@@ -181,14 +192,35 @@ def clc_ngh(adata: anndata.AnnData,
     test_spots=np.array(adata[adata.obs[cat]==celltype].obsm['spatial'])
     test_spots_bool=(adata.obs[cat]==celltype).values
     all_spot_coords=np.array(adata.obsm['spatial'])
+
+    # check if sample has this category in annotation
+    if len(test_spots_bool[test_spots_bool==True])==0: 
+        print(f'Sample does not have {celltype} in {cat}.')
+        return adata
+
+    # get spot_scalefactor
+    # 65 micrometers is the theoretical diameter of visium spot
+    sample_name_uns=list(adata.uns['spatial'].keys())[0]
+    spot_scalefactor=\
+    adata.uns['spatial'][sample_name_uns]['scalefactors']\
+    ['spot_diameter_fullres']/65
+
     for j in tqdm.tqdm(range(start,n+1)):
         if noncumulative:
             neighborhood=gen_neighborhood_nc(adata,j,test_spots,
                                              test_spots_bool,
-                                             all_spot_coords)
+                                             all_spot_coords,
+					     spot_scalefactor)
         else: neighborhood=gen_neighborhood(j,test_spots,
                                             test_spots_bool,
-                                            all_spot_coords)
+                                            all_spot_coords,
+					    spot_scalefactor)
+
+        # check when to stop if you reach the end of the slide
+        if len(neighborhood[neighborhood==True])==0: 
+            print(f'{j}th layer is empty. Stopping the calculation.')    
+            break
+
         add_neighborhood2obs(adata,f'{j}{typ}',neighborhood)
     
     if return_adata: return adata
@@ -326,9 +358,16 @@ def gen_intraneighborhood(adata: anndata.AnnData,
 
     test_spots=np.array(adata.obsm['spatial'])[test_spots_bool]
 
+    # get spot_scalefactor
+    # 65 micrometers is the theoretical diameter of visium spot
+    sample_name_uns=list(adata.uns['spatial'].keys())[0]
+    spot_scalefactor=\
+    adata.uns['spatial'][sample_name_uns]['scalefactors']\
+    ['spot_diameter_fullres']/65
+
     neighborhood=np.empty(0, dtype=int)
     for spot in test_spots:
-        center_x, center_y, radius = gen_spot_circle(spot,1)
+        center_x, center_y, radius = gen_spot_circle(spot, spot_scalefactor, 1)
         # test each spot vs `test spots`
         dist = np.square(test_spots[:, 0]-center_x) \
         + np.square(test_spots[:, 1]-center_y)
@@ -396,6 +435,12 @@ def clc_intrangh(adata: anndata.AnnData,
     # generating and adding neighborhoods to adata
     test_spots=np.array(adata[adata.obs[cat]==celltype].obsm['spatial'])
     test_spots_bool=(adata.obs[cat]==celltype).values
+
+    # check if sample has this category in annotation
+    if len(test_spots_bool[test_spots_bool==True])==0: 
+        print(f'Sample does not have {celltype} in {cat}.')
+        return adata
+
     for j in tqdm.tqdm(range(start,n+1)):
         neighborhood=gen_intraneighborhood(adata,test_spots,
                                            test_spots_bool,j,sample)
@@ -620,6 +665,10 @@ def prepare_ngh_composition(adata: anndata.AnnData,
                       if (i.startswith('neighbor')) \
                       and (sample_name in i)])
     all_dists=sorted(list(map(int,all_dists)))
+
+    # check if celltype is not in sample
+    if len(all_dists)==0:
+        return [], pd.DataFrame()
     
     # get all types
     types=[]
@@ -634,7 +683,7 @@ def prepare_ngh_composition(adata: anndata.AnnData,
     deconv.reindex(adata\
                    [adata.obs[f'neighborhood_0{typ}{sample_name}']=='neighbor']\
                    .obs_names
-                  ).sum().sort_values(ascending=False).index[:8].tolist()     
+                   ).sum().sort_values(ascending=False).index[:8].tolist()
         
     dst=[]
     existing_dists=[]
@@ -692,6 +741,9 @@ def get_series_w_distances(adata: anndata.AnnData,
         and ('neighborhood_0' not in i) \
         and ('nc' in i or 'intra' in i)
     ])
+
+    # check if sample does not have calculated distances
+    if len(a)==0: return pd.Series()
     
     # get series with spots and distance category
     r=[]
@@ -734,6 +786,10 @@ def get_goi(adata: anndata.AnnData,
     '''
     
     r=get_series_w_distances(adata,sample)
+
+    # check if sample does not have calculated distances
+    if len(r)==0: return []
+
     adata=adata[r.index]
     # get genes that has nonzero counts in >70 % of cells
     nonzero=adata[:,adata.to_df().sum()!=0].var_names
@@ -885,6 +941,11 @@ def calc_lm_s(adata: anndata.AnnData,
         goi=get_goi(adata,sample)
     else:
         goi=get_goi(adata,sample)
+
+    # check if sample does not have calculated distances
+    if len(goi)==0: 
+        print(f'{sample} does not have calculated distances.')
+        return pd.Series()
     
     # calculate p-values for gene of interests
     print(f'Length of genes of interest = {len(goi)}')  
