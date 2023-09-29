@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from typing import List,Tuple,Union,Optional
 
 import statsmodels.api as sm
+from scipy.stats import f_oneway
 
 plt.rcdefaults()
 sc.set_figure_params()
@@ -20,7 +21,7 @@ def gen_spot_circle(spot: np.array,
     # 100 is the theoritcal distance between centers of spots
     spot_distance=100*spot_scalefactor*n
     # introduce a small error, because of technical issues
-    # in spaceranger
+    # in spaceranger: https://github.com/scverse/squidpy/issues/660
     error=20*spot_scalefactor/n
     center_x,center_y=spot[0],spot[1]
     radius=spot_distance+error
@@ -200,6 +201,7 @@ def clc_ngh(adata: anndata.AnnData,
 
     # get spot_scalefactor
     # 65 micrometers is the theoretical diameter of visium spot
+    # https://support.10xgenomics.com/spatial-gene-expression/software/pipelines/latest/output/spatial
     sample_name_uns=list(adata.uns['spatial'].keys())[0]
     spot_scalefactor=\
     adata.uns['spatial'][sample_name_uns]['scalefactors']\
@@ -360,6 +362,7 @@ def gen_intraneighborhood(adata: anndata.AnnData,
 
     # get spot_scalefactor
     # 65 micrometers is the theoretical diameter of visium spot
+    # https://support.10xgenomics.com/spatial-gene-expression/software/pipelines/latest/output/spatial
     sample_name_uns=list(adata.uns['spatial'].keys())[0]
     spot_scalefactor=\
     adata.uns['spatial'][sample_name_uns]['scalefactors']\
@@ -861,7 +864,8 @@ def gen_data_for_lm(adata: anndata.AnnData,
         return data
 
 def calc_lm(data: pd.DataFrame,
-            use_mixedlm: bool=False) -> List:
+            use_mixedlm: bool=False,
+            return_regression_coef: bool=False) -> Union[List,pd.Series]:
     '''
     Test dependency of gene expression of specific gene on distance.
     By default generalized linear model is used.
@@ -873,6 +877,8 @@ def calc_lm(data: pd.DataFrame,
     use_mixedlm : bool, optional (Default: `False`)
         Whether to use MixedLM to use information of sample identity.
         Instead of `statsmodels.api.GLM` use `statsmodels.api.mixedlm`.
+    return_regression_coef : bool, optional (Default: `False`)
+        Whether to return regression coefficients per each layer.
         
     Returns:
     --------
@@ -895,12 +901,17 @@ def calc_lm(data: pd.DataFrame,
     try: result = model.fit()
     except: return np.nan
 
-    return result.pvalues.values.tolist()
+    if return_regression_coef:
+        return result.pvalues.values.tolist(), result.params
+    else:
+        return result.pvalues.values.tolist()
 
+	
 def calc_lm_s(adata: anndata.AnnData,
               sample: str,
               use_mixedlm: bool=False,
-              samples: Union[List,None]=None) -> pd.Series:
+              samples: Union[List,None]=None,
+              return_regression_coef: bool=False) -> pd.DataFrame:
     '''
     Calculates adjusted p-values (Benjamini/Hochberg) for genes of interest, 
     genes that has nonzero counts in >70 % of cells.
@@ -923,11 +934,14 @@ def calc_lm_s(adata: anndata.AnnData,
     samples : list, optional (Default: `None`)
         List of sample names you want to test. 
         By default calculates on all samples in AnnData.
-        
+    return_regression_coef : bool, optional (Default: `False`)          
+         Whether to return regression coefficients per each layer.
+
     Returns:
     --------
-    ps.Series
-        pd.Series with gene names and corresponding adjusted p-values.
+    ps.DataFrame
+        pd.DataFrame with gene names and corresponding adjusted p-values
+        per each layer.
     '''
     
     if use_mixedlm: 
@@ -949,13 +963,30 @@ def calc_lm_s(adata: anndata.AnnData,
     
     # calculate p-values for gene of interests
     print(f'Length of genes of interest = {len(goi)}')  
-    p_values=[calc_lm(data=gen_data_for_lm(adata=adata,
-                                           gene=g,
-                                           sample=sample,
-                                           use_mixedlm=use_mixedlm,
-                                           samples=samples),
-                       use_mixedlm=use_mixedlm)
-              for g in tqdm.tqdm(goi[:1000],leave=True,position=0)]
+    if return_regression_coef:
+        p_values_and_coef=[calc_lm(data=gen_data_for_lm(adata=adata,
+                                                        gene=g,
+                                                        sample=sample,
+                                                        use_mixedlm=use_mixedlm,
+                                                        samples=samples),
+                                   use_mixedlm=use_mixedlm,
+                                   return_regression_coef=return_regression_coef)
+                           for g in tqdm.tqdm(goi,leave=True,position=0)]
+        p_values=[pair[0] for pair in p_values_and_coef]
+        coefs=pd.concat([pair[1] for pair in p_values_and_coef],
+                         axis=1).T
+        coefs.index=goi
+        
+    # calculate p-values for gene of interests
+    else:
+        p_values=[calc_lm(data=gen_data_for_lm(adata=adata,
+                                               gene=g,
+                                               sample=sample,
+                                               use_mixedlm=use_mixedlm,
+                                               samples=samples),
+                           use_mixedlm=use_mixedlm,
+                           return_regression_coef=return_regression_coef)
+                  for g in tqdm.tqdm(goi,leave=True,position=0)]
     
     # filter out np.nan and gene names as well
     p_values_filt=[]
@@ -965,11 +996,11 @@ def calc_lm_s(adata: anndata.AnnData,
             p_values_filt.append(pv)
             goi_filt.append(g)
             
-    print('Applying Benjamini/Hochberg multiple correction.')
-    pval_cols = zip(*p_values_filt)
-    pval_cols_adj=[sm.stats.multipletests(i,method='fdr_bh')[1] 
-                   for i in pval_cols]
-    pv_adj = list(zip(*pval_cols_adj))
+#    print('Applying Benjamini/Hochberg multiple correction.')
+#    pval_cols = zip(*p_values_filt)
+#    pval_cols_adj=[sm.stats.multipletests(i,method='fdr_bh')[1] 
+#                   for i in pval_cols]
+#    pv_adj = list(zip(*pval_cols_adj))
     
 #     print('Applying Benjamini/Hochberg multiple correction.')
 #     pv_adj = sm.stats.multipletests(p_values_filt, method='fdr_bh')[1]
@@ -988,24 +1019,37 @@ def calc_lm_s(adata: anndata.AnnData,
             
     # get genes with at least one significant p-value
     # across intercept and other coefficients
-    goi_filt_mf=[]
-    pv_adj_mf=[]
-    for g,pv in zip(goi_filt,pv_adj):
-        if True in [i<0.05 for i in pv]:
-            pv_adj_mf.append(pv)
-            goi_filt_mf.append(g)
+#    goi_filt_mf=[]
+#    pv_adj_mf=[]
+#    for g,pv in zip(goi_filt,pv_adj):
+        #if len([i for i in pv if i<0.05])==len(pv):
+#        if len([i for i in pv if i<0.05])/len(pv)>0.8:
+        #if True in [i<0.05 for i in pv]:
+#            pv_adj_mf.append(pv)
+#            goi_filt_mf.append(g)
             
-    print(f'Number of tested genes = {len(goi)}, ' \
-    'number of retained genes after adjustment ' \
-    f'= {len(goi_filt_mf)}.')
+#    print(f'Number of tested genes = {len(goi)}, ' \
+#    'number of retained genes after adjustment ' \
+#    f'= {len(goi_filt_mf)}.')
     
-    return pd.Series(index=goi_filt_mf, data=pv_adj_mf)
+#    return pd.Series(index=goi_filt_mf, data=pv_adj_mf)
+
+    coefs_model=coefs.copy()
+    coefs_model.iloc[:,1:]=0
+    fstat=[]
+    for model,sample in zip(coefs_model.iterrows(),
+                            coefs.iterrows()):
+        fstat.append(f_oneway(model[1].values,
+                              sample[1].values).pvalue<0.05)
+    
+    return coefs.loc[fstat,:]
 
 def calc_lm_on_samples(adata: anndata.AnnData,
                        sample_obs_key: str,
                        samples: Union[List,None]=None,
-                       use_mixedlm: bool=False
-                      ) -> Union[pd.Series,dict]:
+                       use_mixedlm: bool=False,
+                       return_regression_coef: bool=False
+                      ) -> dict:
     '''
     Calculates adjusted p-values (Benjamini/Hochberg) for genes of interest, 
     genes that has nonzero counts in >70 % of cells.
@@ -1028,7 +1072,9 @@ def calc_lm_on_samples(adata: anndata.AnnData,
         For example, you have 10 samples, some of them responders, 
         some of them are non-responders.
         WARNING: it is not implemented yet.
-        
+    return_regression_coef : bool, optional (Default: `False`)                 
+          Whether to return regression coefficients per each layer.
+
     Returns:
     --------
     Union[pd.Series,dict]
@@ -1040,13 +1086,15 @@ def calc_lm_on_samples(adata: anndata.AnnData,
     
     if use_mixedlm:
         print('Running MixedLM.')
-        return calc_lm_s(adata,'',use_mixedlm,samples)
+        return calc_lm_s(adata,'',use_mixedlm,
+                         samples,return_regression_coef)
     
     print('Running GLM.')
     
     if sample_obs_key is None: 
         print('Calculating linear model on one sample.')
-        return calc_lm_s(adata,'')
+        return calc_lm_s(adata,'',use_mixedlm,
+                         None,return_regression_coef)
     
     if samples is None: sample_list=adata.obs[sample_obs_key].unique()
     else: sample_list=samples
@@ -1060,6 +1108,7 @@ def calc_lm_on_samples(adata: anndata.AnnData,
             if s==sample
         }
         print(f'Calculating linear model on {sample} sample.')
-        r[sample]=calc_lm_s(adatatmp,sample)
+        r[sample]=calc_lm_s(adatatmp,sample,use_mixedlm,
+                            None,return_regression_coef)
     return r
 
