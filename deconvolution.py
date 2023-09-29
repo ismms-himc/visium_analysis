@@ -58,6 +58,7 @@ def get_optimal_num_clusters(adata: anndata.AnnData) -> anndata.AnnData:
 def calc_leiden(adata: anndata.AnnData,
                 deconv: pd.DataFrame,
                 sample: str,
+                n_hvg: int=4000,
                 pre_computed_adata: bool=False) -> anndata.AnnData:
     '''
     Calculates leiden clustering on deconvolution 
@@ -102,7 +103,8 @@ def calc_leiden(adata: anndata.AnnData,
     else:
         sc.pp.normalize_total(adata,target_sum=1e6)
         sc.pp.log1p(adata)
-        sc.pp.highly_variable_genes(adata)
+        print(f'You are using {n_hvg} highly variable genes.')
+        sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg)
         sc.tl.pca(adata,use_highly_variable=True)
         sc.pp.neighbors(adata)
         sc.tl.umap(adata)
@@ -117,6 +119,7 @@ def calc_leiden(adata: anndata.AnnData,
 
 def calc_leiden_on_deconv(adata: anndata.AnnData,
                           deconv: pd.DataFrame,
+                          n_hvg: int=4000,
                           sample_obs_key: str=None,
                           samples: Union[list,None]=None,
                           pre_computed_adata: bool=False) -> anndata.AnnData:
@@ -132,6 +135,8 @@ def calc_leiden_on_deconv(adata: anndata.AnnData,
     deconv : pd.DataFrame 
         pd.DataFrame with barcodes in rows 
         and deconvoluted cell subtypes in columns.
+    n_hvg: int, optional (Default is 4000).
+        number of highly varible genes to use in calculations.
     sample_obs_key : str, optional (Default is `None`)
         .obs name where sample names are stored. 
         `None` if AnnData contains one sample.
@@ -165,14 +170,15 @@ def calc_leiden_on_deconv(adata: anndata.AnnData,
         sample=f'_{sample}'
         print(f'Running {sample} sample.')
         r.append(calc_leiden(adatatmp,deconvtmp,\
-                             sample,pre_computed_adata=False))
+                             sample,n_hvg,pre_computed_adata=False))
         
     r=sc.concat(r,join='outer',uns_merge='unique')
     return r
     
 def get_dense_clusters(adata: anndata.AnnData,
                        group_name: str,
-                       cluster: str) -> anndata.AnnData:
+                       cluster: str,
+		       eps: int=130) -> anndata.AnnData:
     '''
     Calculate DBSCAN on specified group of spots in `.obs`.
     Can be helpful if you want to assess difference in structured group. 
@@ -188,6 +194,9 @@ def get_dense_clusters(adata: anndata.AnnData,
     cluster : str 
         Cluster name in group_name, which you want to separate using DBSCAN.
         For example '0' in 'leiden'.
+    eps : int, optional (Default is 130)
+	eps as in sklearn DBSCAN. Calculated as spot scalefactor*130.
+        Where spot_scalefactor is [spot_diameter_fullres in .uns]/65.
     
     Returns:
     --------
@@ -200,7 +209,7 @@ def get_dense_clusters(adata: anndata.AnnData,
     otherindexes=list(set(adata.obs_names)-set(indexofinterest))
     data=adata[indexofinterest].obsm['spatial']
     
-    dbscan=DBSCAN(eps=130, min_samples=5)
+    dbscan=DBSCAN(eps=eps, min_samples=5)
     dbscan.fit(data)
     labels=dbscan.labels_
     # minus 2 == minus outliers and `other`
@@ -218,7 +227,8 @@ def calc_utest(adata: anndata.AnnData,
                deconv: pd.DataFrame,
                denselabels: str,
                mcorr: bool=True,
-               normalize: bool=True) -> pd.DataFrame:
+               normalize: bool=True,
+               alternative: str='two-sided') -> pd.DataFrame:
     '''
     Calcute Mann-Whitney U test on 1 vs other cell subtypes.
     
@@ -237,6 +247,9 @@ def calc_utest(adata: anndata.AnnData,
     normalize : bool, optional (Default is `True`)
         Whether to normalize absolute number of deconvoluted cells 
         on mean number of cells in spot.
+   alternative : str, optional (Default is `tw-sided`)
+        Mann-Whitney U-test alternative. For example
+        `less` stands for less in cluster of interest than in others.
     
     Returns:
     --------
@@ -295,7 +308,9 @@ def calc_utest(adata: anndata.AnnData,
             if round(u.iloc[:,ix],3).value_counts(normalize=True).\
             values[0]<=0.5:
                 rc.loc[l[counter],c]=\
-                mannwhitneyu(u.iloc[:,ix],o.iloc[:,ix]).pvalue
+                mannwhitneyu(x=u.iloc[:,ix],
+                             y=o.iloc[:,ix],
+                             alternative=alternative).pvalue
             else:
                 rc.loc[l[counter],c]=np.nan
         if mcorr:
