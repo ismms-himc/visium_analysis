@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from typing import List,Tuple,Union,Optional
 
 import statsmodels.api as sm
-from scipy.stats import f_oneway
+from scipy.stats import linregress
 
 plt.rcdefaults()
 sc.set_figure_params()
@@ -18,11 +18,9 @@ plt.rcParams['figure.figsize'] = (5,5)
 def gen_spot_circle(spot: np.array,
                     spot_scalefactor: float,
                     n: int) -> Tuple[int,int,float]:
-    # 100 is the theoritcal distance between centers of spots
-    spot_distance=100*spot_scalefactor*n
-    # introduce a small error, because of technical issues
-    # in spaceranger: https://github.com/scverse/squidpy/issues/660
-    error=20*spot_scalefactor/n
+    # spot_scalefactor is the theoritcal distance between centers of spots
+    spot_distance=spot_scalefactor*n
+    error=0
     center_x,center_y=spot[0],spot[1]
     radius=spot_distance+error
     return center_x,center_y,radius
@@ -65,7 +63,7 @@ def gen_neighborhood(n: int,
         center_x, center_y, radius = gen_spot_circle(spot,spot_scalefactor,n)
         dist = np.square(all_spot_coords[:, 0]-center_x) \
         + np.square(all_spot_coords[:, 1]-center_y)
-        filt_coords=dist<radius**2
+        filt_coords=dist<=radius**2
         filt_coords=filt_coords & ~test_spots_bool
         ngh = np.append(ngh, [filt_coords], axis=0)
     neighborhood=np.any(ngh, axis=0)
@@ -107,10 +105,10 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
     
     # check if cumulative neighborhood at this distance is already calculated
     try:
-        len(adata.obs[f'neighborhood_{n}_c'])!=0
+        len(adata.uns['neighborhood'][f'neighborhood_{n}_c'])!=0
         print(f'Cumulative neighborhood at the {n*100} micrometers '\
         'distance is already calculated.')
-        cur_calc=adata.obs[f'neighborhood_{n}_c']
+        cur_calc=adata.uns['neighborhood'][f'neighborhood_{n}_c']
         cur_neighbors=(cur_calc=='neighbor').values
     except:
         print(f'Cumulative neighborhood at the {n*100} micrometers '\
@@ -121,7 +119,7 @@ def gen_neighborhood_nc(adata: anndata.AnnData,
 				       spot_scalefactor)
         add_neighborhood2obs(adata,f'{n}_c',cur_neighbors)
     
-    prev_calc=adata.obs[f'neighborhood_{n-1}_c']
+    prev_calc=adata.uns['neighborhood'][f'neighborhood_{n-1}_c']
     previous_neighbors=(prev_calc=='neighbor').values
     r=cur_neighbors & ~previous_neighbors
     
@@ -160,7 +158,7 @@ def clc_ngh(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData
-        if `return_adata=True` returns AnnData with .obs['neighborhood_*'] 
+        if `return_adata=True` returns AnnData with .uns['neighborhood'] 
         for all n for cumulative and noncumulative neighborhoods. 
         Otherwise, return None.
     '''
@@ -173,8 +171,8 @@ def clc_ngh(adata: anndata.AnnData,
         typ='_nc'
         try:
             last_calc=\
-            sorted(adata.obs.columns[
-                adata.obs.columns.str.contains('_nc')
+            sorted(adata.uns['neighborhood'].columns[
+                adata.uns['neighborhood'].columns.str.contains('_nc')
             ])[-1]
             start=int(last_calc.split('_')[1])+1
         except: pass
@@ -182,9 +180,9 @@ def clc_ngh(adata: anndata.AnnData,
         typ='_c'
         try:
             last_calc=\
-            sorted(adata.obs.columns[
-                (adata.obs.columns.str.startswith('neighborhood'))\
-                 & (adata.obs.columns.str.contains('_c'))
+            sorted(adata.uns['neighborhood'].columns[
+                (adata.uns['neighborhood'].columns.str.startswith('neighborhood'))\
+                 & (adata.uns['neighborhood'].columns.str.contains('_c'))
             ])[-1]
             start=int(last_calc.split('_')[1])+1
         except: pass
@@ -199,13 +197,10 @@ def clc_ngh(adata: anndata.AnnData,
         print(f'Sample does not have {celltype} in {cat}.')
         return adata
 
-    # get spot_scalefactor
-    # 65 micrometers is the theoretical diameter of visium spot
-    # https://support.10xgenomics.com/spatial-gene-expression/software/pipelines/latest/output/spatial
+    # get the distance between spots centers
     sample_name_uns=list(adata.uns['spatial'].keys())[0]
     spot_scalefactor=\
-    adata.uns['spatial'][sample_name_uns]['scalefactors']\
-    ['spot_diameter_fullres']/65
+    adata.uns['spatial'][sample_name_uns]['scalefactors']['fiducial_diameter_fullres']
 
     for j in tqdm.tqdm(range(start,n+1)):
         if noncumulative:
@@ -267,9 +262,11 @@ def calc_neighborhood(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData
-        An updated AnnData with calculated `.obs['neighborhood_*_sample_name']`
+        An updated AnnData with calculated `.uns['neighborhood'] 
+        with columns ['neighborhood_*_sample_name']`
         for >1 samples for both cumulative and noncumulative neighborhoods. 
-        For AnnData with one sample, it returns `.obs['neighborhood_*']`.
+        For AnnData with one sample, it returns `.uns['neighborhood'] 
+        with columns ['neighborhood_*']`.
     '''
 
     if sample_obs_key==None: 
@@ -279,6 +276,7 @@ def calc_neighborhood(adata: anndata.AnnData,
     else: samples_list=adata.obs[sample_obs_key].unique()
 
     r=[]
+    uns_r=[]
     for sample in samples_list:
         
         adatatmp=adata[adata.obs[sample_obs_key]==sample]
@@ -289,22 +287,18 @@ def calc_neighborhood(adata: anndata.AnnData,
         }
         print(f'Running {sample} sample')
         adatatmp=clc_ngh(adatatmp,cat,celltype,n,noncumulative,return_adata=True)
-        adatatmp.obs.columns=[
-            i+f'_{sample}' \
-            if i.startswith('neighborhood') \
-            else i \
-            for i in adatatmp.obs.columns
-        ]
+        try:
+            adatatmp.uns['neighborhood'].columns=[
+                i+f'_{sample}' \
+                for i in adatatmp.uns['neighborhood'].columns
+            ]
+            uns_r.append(adatatmp.uns['neighborhood'])
+        except: pass
         r.append(adatatmp)
 
     r=sc.concat(r,join='outer',uns_merge='unique')
-    # remove unnecessary objects from .uns
-    try:
-        for todel in [
-            i for i in r.uns.keys() if i.startswith('neighborhood')
-        ]: 
-            del r.uns[todel]
-    except: pass
+    r.uns['neighborhood']=\
+    pd.concat(uns_r).reindex(r.obs_names).fillna('not neighbor')
     return r
 
 def gen_intraneighborhood(adata: anndata.AnnData,
@@ -348,7 +342,8 @@ def gen_intraneighborhood(adata: anndata.AnnData,
         for i in range(1,n):
             i=f'-{i}'
             prev_row=\
-            (adata.obs[f'neighborhood_{i}_intra{suffix}']=='neighbor').values
+            (adata.uns['neighborhood']\
+             [f'neighborhood_{i}_intra{suffix}']=='neighbor').values
             prev_spots=np.append(prev_spots, [prev_row], axis=0)
         prev_spots=np.any(prev_spots, axis=0)
         # subtract previous neighbors from current ones
@@ -360,13 +355,10 @@ def gen_intraneighborhood(adata: anndata.AnnData,
 
     test_spots=np.array(adata.obsm['spatial'])[test_spots_bool]
 
-    # get spot_scalefactor
-    # 65 micrometers is the theoretical diameter of visium spot
-    # https://support.10xgenomics.com/spatial-gene-expression/software/pipelines/latest/output/spatial
+    # get the distance between spots centers
     sample_name_uns=list(adata.uns['spatial'].keys())[0]
     spot_scalefactor=\
-    adata.uns['spatial'][sample_name_uns]['scalefactors']\
-    ['spot_diameter_fullres']/65
+    adata.uns['spatial'][sample_name_uns]['scalefactors']['fiducial_diameter_fullres']
 
     neighborhood=np.empty(0, dtype=int)
     for spot in test_spots:
@@ -419,7 +411,7 @@ def clc_intrangh(adata: anndata.AnnData,
     --------
     anndata.AnnData 
         If `return_adata==True` return AnnData 
-        with .obs['neighborhood_*_intra'] for all n.
+        with .uns['neighborhood'] ith columns ['neighborhood_*_intra'] for all n.
     '''
                         
     start=0
@@ -429,8 +421,8 @@ def clc_intrangh(adata: anndata.AnnData,
     if sample is None: typ='_intra'
     else: typ=f'_intra_{sample}'
     try:
-        last_calc=sorted(adata.obs.columns[
-            adata.obs.columns.str.contains('_intra')
+        last_calc=sorted(adata.uns['neighborhood'].columns[
+            adata.uns['neighborhood'].columns.str.contains('_intra')
         ])[-1]
         start=int(last_calc.split('_')[1])+1
     except: pass
@@ -491,8 +483,9 @@ def calc_intraneighborhood(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData 
-        AnnData with calculated .obs['neighborhood_*_intra_{sample_name}'] 
-        for >1 samples. .obs['neighborhood_*_intra'] for AnnData with one sample.
+        AnnData with calculated .uns['neighborhood']
+        with columns ['neighborhood_*_intra_{sample_name}'] 
+        for >1 samples. columns ['neighborhood_*_intra'] for AnnData with one sample.
     '''
 
     if sample_obs_key==None: 
@@ -502,6 +495,7 @@ def calc_intraneighborhood(adata: anndata.AnnData,
     else: samples_list=adata.obs[sample_obs_key].unique()
 
     r=[]
+    uns_r=[]
     for sample in samples_list:
         
         adatatmp=adata[adata.obs[sample_obs_key]==sample]
@@ -510,19 +504,16 @@ def calc_intraneighborhood(adata: anndata.AnnData,
             for s,v in adatatmp.uns['spatial'].items() \
             if s==sample
         }
-        print(f'Running {sample} sample')
+        print(f'Running {sample} sample.')
         adatatmp=clc_intrangh(adatatmp,cat,celltype,
                               n,return_adata=True,sample=sample)
+        try: uns_r.append(adatatmp.uns['neighborhood'])
+        except: pass
         r.append(adatatmp)
 
     r=sc.concat(r,join='outer',uns_merge='unique')
-    # remove unnecessary objects from .uns
-    try:
-        for todel in [
-            i for i in r.uns.keys() if i.startswith('neighborhood')
-        ]: 
-            del r.uns[todel]
-    except: pass
+    r.uns['neighborhood']=\
+    pd.concat(uns_r).reindex(r.obs_names).fillna('not neighbor')
     return r
 
 def calc_all_neighbors(adata: anndata.AnnData, 
@@ -565,17 +556,17 @@ def calc_all_neighbors(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData
-        An updated AnnData with calculated `.obs['neighborhood_*_sample_name']` 
+        An updated AnnData with calculated `.uns['neighborhood']` 
+        with columns ['neighborhood_*_sample_name'] 
         for >1 samples where `*` means cumulative/noncumulative neighborhoods 
         and/or intra-neighbors. 
-        For AnnData with one sample, it returns `.obs['neighborhood_*']`.
+        For AnnData with one sample, it returns `.uns['neighborhood']`
+        with columns ['neighborhood_*'].
     '''
     
     if intra_only:
         ad2=calc_intraneighborhood(adata,cat,celltype,
                                    n,sample_obs_key,samples)
-#         ad2=collapse_obs2uns(ad2,n,sample_obs_key,samples,
-#                              noncumulative,add_intra,intra_only)
         return ad2
     
     else:
@@ -584,11 +575,11 @@ def calc_all_neighbors(adata: anndata.AnnData,
         if add_intra:
             ad2=calc_intraneighborhood(adata,cat,celltype,
                                        n,sample_obs_key,samples)
-            for i in ad2.obs.columns:
-                if 'intra' in i:
-                    ad1.obs[i]=ad2.obs[i]
-#         ad1=collapse_obs2uns(ad1,n,sample_obs_key,samples,
-#                              noncumulative,add_intra,intra_only)
+            try:
+                for i in ad2.uns['neighborhood'].columns:
+                    if 'intra' in i:
+                        ad1.uns['neighborhood'][i]=ad2.uns['neighborhood'][i]
+            except: pass
         return ad1
     
 def add_neighborhood2obs(adata: anndata.AnnData,
@@ -610,28 +601,27 @@ def add_neighborhood2obs(adata: anndata.AnnData,
     --------
     None.
     '''
-    
-    adata.obs[f'neighborhood_{n}']=\
-    pd.Series(index=adata.obs_names,
-              data=np.where(neighborhood,'neighbor','not neighbor'))
 
-    print(f'Coordinates of neighbors are added '\
-    f'in adata.obs[\'neighborhood_{n}\']')
+    series_to_add=\
+    pd.Series(index=adata.obs_names,                                   
+              data=np.where(neighborhood,'neighbor','not neighbor'))   
     
-def subtract_2dcoordinates(cur: np.array, 
-                           prev: np.array) -> np.array: 
-    new_spots = set(map(tuple, cur))
-    old_spots = set(map(tuple, prev))
-    r = np.array(list(new_spots - old_spots))
-    return r
+    if 'neighborhood' not in adata.uns.keys():
+        adata.uns['neighborhood']=pd.DataFrame(index=adata.obs_names)
+    else: pass
+    adata.uns['neighborhood'][f'neighborhood_{n}']=series_to_add
+
+    print(f'Annotation of neighbors is added '\
+    f'in adata.uns[\'neighborhood\'], column \'neighborhood_{n}\'')
+
     
 # code for boxplots in plot_funcs
 
-# @uns2obs
 def prepare_ngh_composition(adata: anndata.AnnData,
-                            deconv: pd.DataFrame,
+                            feature_mtx: pd.DataFrame,
                             noncumulative: bool=True,
                             sample: Union[str,None]=None,
+                            subtypes: list=None,
                             intra: bool=False) -> Tuple[list,pd.DataFrame]:
     '''
     Calculates neighborhood composition till specified distance.
@@ -640,14 +630,17 @@ def prepare_ngh_composition(adata: anndata.AnnData,
     -----------
     adata : anndata.Anndata 
         AnnData
-    deconv : pd.DataFrame 
-        pd.DataFrame with barcodes in rows and deconvoluted cell subtypes in columns.
+    feature_mtx : pd.DataFrame 
+        pd.DataFrame with barcodes in rows and features in columns.
+        For example, deconvolution or gene expression matrix.
     noncumulative : bool, optional (Default is `True`)
         Whether to plot noncumulative (True) or cumulative (False) neighborhood.
-    sample : str, optional (Deafult is `None`)
+    sample : str, optional (Default is `None`)
         Sample name. 
         Is used only in AnnData with several images.
-    intra : bool, optional (Deafault is `False`)
+    subtypes : list, optional (Default is `None`)
+        list of cell types you want to visualise.
+    intra : bool, optional (Default is `False`)
         Whether to add intra neighborhood to the plot.
     
     Returns:
@@ -664,7 +657,7 @@ def prepare_ngh_composition(adata: anndata.AnnData,
     # get all distances
     all_dists=set()
     all_dists.update([i.split('_')[1] \
-                      for i in adata.obs.columns \
+                      for i in adata.uns['neighborhood'].columns \
                       if (i.startswith('neighbor')) \
                       and (sample_name in i)])
     all_dists=sorted(list(map(int,all_dists)))
@@ -678,15 +671,19 @@ def prepare_ngh_composition(adata: anndata.AnnData,
     if intra: types.append('_intra')
     if noncumulative: types.append('_nc')
     else: types.append('_c')
-        
-    # picks top 8 subtypes in the 0 layer
-    if '_intra' in types: typ='_intra'
-    else: typ='_c'
-    sbtps=\
-    deconv.reindex(adata\
-                   [adata.obs[f'neighborhood_0{typ}{sample_name}']=='neighbor']\
-                   .obs_names
-                   ).sum().sort_values(ascending=False).index[:8].tolist()
+    
+    if subtypes is not None:
+        sbtps=subtypes
+    else:    
+        # picks top 8 subtypes in the 0 layer
+        if '_intra' in types: typ='_intra'
+        else: typ='_c'
+        sbtps=\
+        feature_mtx.reindex(adata\
+                            [adata.uns['neighborhood'].reindex(adata.obs_names)\
+                             [f'neighborhood_0{typ}{sample_name}']=='neighbor']\
+                             .obs_names
+                           ).sum().sort_values(ascending=False).index[:8].tolist()
         
     dst=[]
     existing_dists=[]
@@ -697,7 +694,7 @@ def prepare_ngh_composition(adata: anndata.AnnData,
             # it is meaningful because of intra-neighbors 
             try:
                 neighbor_index=\
-                adata[adata.obs[
+                adata[adata.uns['neighborhood'].reindex(adata.obs_names)[
                     f'neighborhood_{i}{typ}{sample_name}'
                 ]=='neighbor']\
                 .obs_names
@@ -708,14 +705,13 @@ def prepare_ngh_composition(adata: anndata.AnnData,
                 
                 existing_dists.append(i)
             except: continue
-            dst.append(deconv.reindex(neighbor_index).reindex(sbtps,axis=1))
+            dst.append(feature_mtx.reindex(neighbor_index).reindex(sbtps,axis=1))
     dst_df=pd.concat(dst,axis=1,keys=[i for i in existing_dists])
     
     return sbtps,dst_df
 
 # code for assessing gene expression across the distance down there
 
-# @uns2obs
 def get_series_w_distances(adata: anndata.AnnData,
                            sample: str) -> pd.Series:
     '''
@@ -739,7 +735,7 @@ def get_series_w_distances(adata: anndata.AnnData,
     if sample!='': sample=f'_{sample}'
     # get all distances
     a=sorted([
-        int(i.split('_')[1]) for i in adata.obs.columns \
+        int(i.split('_')[1]) for i in adata.uns['neighborhood'].columns \
         if (sample in i) and ('neighbor' in i) \
         and ('neighborhood_0' not in i) \
         and ('nc' in i or 'intra' in i)
@@ -754,13 +750,13 @@ def get_series_w_distances(adata: anndata.AnnData,
         if i<0: typ='_intra'
         else: typ='_nc'
         ixs=\
-        adata[adata.obs[
+        adata[adata.uns['neighborhood'].reindex(adata.obs_names)[
             f'neighborhood_{i}{typ}{sample}']=='neighbor'
              ].obs_names
         r.append(pd.Series(index=ixs,data=[i]*len(ixs)))
     r=pd.concat(r)
     
-    # replace all distances that have <10 cells 
+    # replace all distances that have <10 spots 
     # to distances+1
     to_rep=r.value_counts()[r.value_counts()<10].index
     for i in to_rep: r=r.replace({i:i+1})
@@ -768,10 +764,12 @@ def get_series_w_distances(adata: anndata.AnnData,
     return r
 
 def get_goi(adata: anndata.AnnData,
-            sample: str) -> list:
+            sample: str,
+            nonzero_counts: float) -> list:
     '''
     Return list of genes of interest (goi).
-    GOIs are genes that has nonzero counts in >70 % of cells.
+    GOIs are genes that has nonzero counts in >70 % of cells
+    (by default).
     
     Parameters:
     -----------
@@ -794,11 +792,11 @@ def get_goi(adata: anndata.AnnData,
     if len(r)==0: return []
 
     adata=adata[r.index]
-    # get genes that has nonzero counts in >70 % of cells
+    # get genes that has nonzero counts in >70 % of cells (default)
     nonzero=adata[:,adata.to_df().sum()!=0].var_names
     nonzero_filtered=\
     adata[:,nonzero].to_df().apply(lambda x: (x!=0).sum()/len(r))
-    goi=nonzero_filtered[nonzero_filtered>0.7].index
+    goi=nonzero_filtered[nonzero_filtered>nonzero_counts].index
     return goi
 
 def gen_data_for_lm(adata: anndata.AnnData,
@@ -837,7 +835,7 @@ def gen_data_for_lm(adata: anndata.AnnData,
         if samples is None: 
             sample_list=\
             set([i.split('_')[-1] 
-                 for i in adata.obs.columns 
+                 for i in adata.uns['neighborhood'].columns 
                  if i.startswith('neighborhood')])
         else:
             sample_list=samples
@@ -897,7 +895,7 @@ def calc_lm(data: pd.DataFrame,
                                         f'1+C(distance,Treatment({mindist}))')
     else: 
         formula = f'value ~ C(distance,Treatment({mindist}))'
-        model = sm.GLM.from_formula(formula, data=data)
+        model = sm.GLM.from_formula(formula, data=data, family=sm.families.NegativeBinomial())
     try: result = model.fit()
     except: return np.nan
 
@@ -909,12 +907,13 @@ def calc_lm(data: pd.DataFrame,
 	
 def calc_lm_s(adata: anndata.AnnData,
               sample: str,
+              nonzero_counts: float,
               use_mixedlm: bool=False,
               samples: Union[List,None]=None,
-              return_regression_coef: bool=False) -> pd.DataFrame:
+              return_regression_coef: bool=False) -> pd.Series:
     '''
     Calculates adjusted p-values (Benjamini/Hochberg) for genes of interest, 
-    genes that has nonzero counts in >70 % of cells.
+    genes that has nonzero counts in >70 % of cells (by default).
     Generalized linear model tests dependency of gene expression on distance
     for every gene from the list.
     
@@ -939,9 +938,8 @@ def calc_lm_s(adata: anndata.AnnData,
 
     Returns:
     --------
-    ps.DataFrame
-        pd.DataFrame with gene names and corresponding adjusted p-values
-        per each layer.
+    ps.Series
+        pd.Series with gene names and slope against flat line.
     '''
     
     if use_mixedlm: 
@@ -949,12 +947,12 @@ def calc_lm_s(adata: anndata.AnnData,
         if samples is None:
             sample=\
             set([i.split('_')[-1] 
-                 for i in adata.obs.columns 
+                 for i in adata.uns['neighborhood'].columns 
                  if i.startswith('neighborhood')])[0]
         else: sample=samples[0]
-        goi=get_goi(adata,sample)
+        goi=get_goi(adata,sample,nonzero_counts)
     else:
-        goi=get_goi(adata,sample)
+        goi=get_goi(adata,sample,nonzero_counts)
 
     # check if sample does not have calculated distances
     if len(goi)==0: 
@@ -995,64 +993,35 @@ def calc_lm_s(adata: anndata.AnnData,
         if pv==pv:
             p_values_filt.append(pv)
             goi_filt.append(g)
-            
-#    print('Applying Benjamini/Hochberg multiple correction.')
-#    pval_cols = zip(*p_values_filt)
-#    pval_cols_adj=[sm.stats.multipletests(i,method='fdr_bh')[1] 
-#                   for i in pval_cols]
-#    pv_adj = list(zip(*pval_cols_adj))
-    
-#     print('Applying Benjamini/Hochberg multiple correction.')
-#     pv_adj = sm.stats.multipletests(p_values_filt, method='fdr_bh')[1]
-    
-#     print(f'Number of tested genes = {len(goi)}, ' \
-#     'number of retained genes after adjustment ' \
-#     f'= {len(pv_adj[pv_adj<0.05])}.')
-    
-#       # get significant results only
-#     goi_filt_mf=[]
-#     pv_adj_mf=[]
-#     for g,pv in zip(goi_filt,pv_adj):
-#         if pv<0.05:
-#             pv_adj_mf.append(pv)
-#             goi_filt_mf.append(g)
-            
-    # get genes with at least one significant p-value
-    # across intercept and other coefficients
-#    goi_filt_mf=[]
-#    pv_adj_mf=[]
-#    for g,pv in zip(goi_filt,pv_adj):
-        #if len([i for i in pv if i<0.05])==len(pv):
-#        if len([i for i in pv if i<0.05])/len(pv)>0.8:
-        #if True in [i<0.05 for i in pv]:
-#            pv_adj_mf.append(pv)
-#            goi_filt_mf.append(g)
-            
-#    print(f'Number of tested genes = {len(goi)}, ' \
-#    'number of retained genes after adjustment ' \
-#    f'= {len(goi_filt_mf)}.')
-    
-#    return pd.Series(index=goi_filt_mf, data=pv_adj_mf)
 
-    coefs_model=coefs.copy()
-    coefs_model.iloc[:,1:]=0
-    fstat=[]
-    for model,sample in zip(coefs_model.iterrows(),
-                            coefs.iterrows()):
-        fstat.append(f_oneway(model[1].values,
-                              sample[1].values).pvalue<0.05)
+    def get_trend(values):
+        slope, _, _, _, _ = linregress(range(len(values)), values)
+        return slope
     
-    return coefs.loc[fstat,:]
+    # calculate slope of -1,1,2 or the first three layers
+    try:
+        ngh_cols=coefs.columns
+        elem=ngh_cols[ngh_cols.str.contains('T.-1')]
+        elem_ix=ngh_cols.tolist().index(elem)
+    except:
+        elem_ix=1
+
+    slope=\
+    coefs.iloc[:,elem_ix:elem_ix+3].apply(lambda x: get_trend(x), axis=1)\
+    .sort_values()
+    
+    return slope
 
 def calc_lm_on_samples(adata: anndata.AnnData,
                        sample_obs_key: str,
                        samples: Union[List,None]=None,
+                       nonzero_counts: float=0.7,
                        use_mixedlm: bool=False,
                        return_regression_coef: bool=False
                       ) -> dict:
     '''
     Calculates adjusted p-values (Benjamini/Hochberg) for genes of interest, 
-    genes that has nonzero counts in >70 % of cells.
+    genes that has nonzero counts in >70 % of cells (default).
     Generalized linear model tests dependency of gene expression on distance
     for every gene from the list.
     WARNING: mixedlm is not implemented yet.
@@ -1067,6 +1036,8 @@ def calc_lm_on_samples(adata: anndata.AnnData,
     samples : list, optional (Default: `None`)
         List of sample names you want to test. 
         By default calculates on all samples in AnnData.
+    nonzero_counts : float (Default: `0.7`)
+        The minimum fraction of barcodes expressing a certain gene.
     use_mixedlm : bool, optional (Default: `False`)
         Whether to use MixedLM for samples with different conditions.
         For example, you have 10 samples, some of them responders, 
@@ -1086,14 +1057,14 @@ def calc_lm_on_samples(adata: anndata.AnnData,
     
     if use_mixedlm:
         print('Running MixedLM.')
-        return calc_lm_s(adata,'',use_mixedlm,
+        return calc_lm_s(adata,'',nonzero_counts,use_mixedlm,
                          samples,return_regression_coef)
     
     print('Running GLM.')
     
     if sample_obs_key is None: 
         print('Calculating linear model on one sample.')
-        return calc_lm_s(adata,'',use_mixedlm,
+        return calc_lm_s(adata,'',nonzero_counts,use_mixedlm,
                          None,return_regression_coef)
     
     if samples is None: sample_list=adata.obs[sample_obs_key].unique()
@@ -1108,7 +1079,7 @@ def calc_lm_on_samples(adata: anndata.AnnData,
             if s==sample
         }
         print(f'Calculating linear model on {sample} sample.')
-        r[sample]=calc_lm_s(adatatmp,sample,use_mixedlm,
+        r[sample]=calc_lm_s(adatatmp,sample,nonzero_counts,use_mixedlm,
                             None,return_regression_coef)
     return r
 

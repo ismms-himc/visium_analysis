@@ -1,3 +1,4 @@
 preloaded_dbs/
 __pycache__/
 jupyter_scRNA_cleanup.cmd
+run_jupyter.cmd
