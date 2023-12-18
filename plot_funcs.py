@@ -7,7 +7,7 @@ import seaborn as sns
 import squidpy as sq
 import matplotlib.pyplot as plt
 
-from distance import prepare_ngh_composition#,uns2obs,process_ngh_colors
+from distance import prepare_ngh_composition
 
 from typing import Tuple,List,Optional,Union
 
@@ -16,12 +16,11 @@ sc.set_figure_params()
 plt.rcParams['axes.grid'] = False
 plt.rcParams['figure.figsize'] = (5,5)
 
-# @uns2obs
-def plot_spatial_scatter(adata: anndata.AnnData,
+def plot_spatial_scatter(ad: anndata.AnnData,
                          sample_obs_key: Union[str,None],
                          samples: Union[List,None]=None,
                          decoupler_params: bool=False,
-			 figsize: tuple=(10,10),
+			 figsize: tuple=(5,5),
                          *args) -> None:
     '''
     Plot spatial scatter plots for any specified .obs keys as *args.
@@ -29,7 +28,7 @@ def plot_spatial_scatter(adata: anndata.AnnData,
 
     Parameters:
     -----------
-    adata : anndata.AnnData 
+    ad : anndata.AnnData 
         AnnData object. Can contain one or more samples.
     sample_obs_key : str 
         .obs name where sample names are stored. 
@@ -40,7 +39,7 @@ def plot_spatial_scatter(adata: anndata.AnnData,
     decoupler_params : bool, optional (Default is `False`)
         If `True`, applied `coolwarm` cmap 
         and  enlarged size of spots for decoupler output.
-    figsize: tuple, optional (Default is (10,10))
+    figsize: tuple, optional (Default is (5,5))
 	figsize like in squidpy.pl.spatial_scatter.
         For example (7,7).
     args : *args
@@ -58,7 +57,14 @@ def plot_spatial_scatter(adata: anndata.AnnData,
     ['MIME22_BIC21-A6_0','MIME22_BIC21-A5_0'],
     *['pathologist_annotation','denselabels'])
     '''
+
+    adata=ad.copy()
     
+    for i in args:
+        if i.startswith('neighborhood'):
+            try: adata.obs[i]=adata.uns['neighborhood'][i]
+            except: pass
+
     colors=[i for i in args]
     
     # loading decoupler params
@@ -67,16 +73,16 @@ def plot_spatial_scatter(adata: anndata.AnnData,
         cmap='coolwarm'
     else:
         size,cmap=None,None
-    
-    if samples is not None: sample_list=samples
-    else: sample_list=adata.obs[sample_obs_key].unique()
-    
+
     # plot image if adata has one sample
     if sample_obs_key is None:
         sq.pl.spatial_scatter(adata,color=colors,img_res_key='lowres',
                               size=size,cmap=cmap,
                               wspace=.2,ncols=len(colors))
         return None
+    
+    if samples is not None: sample_list=samples
+    else: sample_list=adata.obs[sample_obs_key].unique()
 
     colors_common=[i for i in colors if ('neighborhood' not in i) \
                    and ('leiden' not in i)]
@@ -136,6 +142,7 @@ def plot_clusters_composition(adata: anndata.AnnData,
                               normalize: bool=True) -> None:
     '''
     Plot composition (boxplots) of each cluster.
+    It could be deconvolution or gene expression results.
 
     Parameters:
     -----------
@@ -145,7 +152,7 @@ def plot_clusters_composition(adata: anndata.AnnData,
         Name of `.obs` in adata, which clusters you want to assess. 
         For example .obs['leiden'].
     deconv : pd.DataFrame
-        pd.DataFrame with barcodes in rows 
+        pd.DataFrame with barcodes in rows and features in columns.
         and deconvoluted cell subtypes in columns.
     groups_of_interest : list, optinal (Default is `None`) 
         Specific groups in group_name to plot. Default is all groups.
@@ -176,9 +183,11 @@ def plot_clusters_composition(adata: anndata.AnnData,
     plt.show()
     
 def plot_ngh_cmps(adata: anndata.AnnData,
-                  deconv: pd.DataFrame,
+                  feature_mtx: pd.DataFrame,
+                  type_of_feature_mtx: str,
                   noncumulative: bool=True,
                   sample: Union[str,None]=None,
+                  subtypes: list=None,
                   intra: bool=False) -> None:
     '''
     Plot neighborhood composition till specified distance.
@@ -187,14 +196,18 @@ def plot_ngh_cmps(adata: anndata.AnnData,
     -----------
     adata : anndata.AnnData 
         AnnData with one image.
-    deconv : pd.DataFrame 
-        pd.DataFrame with barcodes in rows 
-        and deconvoluted cell subtypes in columns.
+    feature_mtx : pd.DataFrame 
+        pd.DataFrame with barcodes in rows and features in columns.
+        For example, deconvolution or gene expression matrix.
+    type_of_feature_mtx : str
+        could be `deconvolution` or `gex`.
     noncumulative : bool, optional (Default is `True`)
         Whether to plot noncumulative (True) or cumulative (False) neighborhood.
     sample : str, optional (Default is `None`)
         Sample name. 
         Is used only in AnnData with several images.
+    subtypes : list, optional (Default is `None`)
+        list of cell types you want to visualise.
     intra : bool, optional (Default is `False`) 
         Whether to add intra-neighborhood to plot.
     
@@ -204,7 +217,7 @@ def plot_ngh_cmps(adata: anndata.AnnData,
     '''
     
     sbtps,dst_df=\
-    prepare_ngh_composition(adata,deconv,noncumulative,sample,intra)
+    prepare_ngh_composition(adata,feature_mtx,noncumulative,sample,subtypes,intra)
 
     all_dists=dst_df.columns.get_level_values(0).unique()
 
@@ -216,13 +229,21 @@ def plot_ngh_cmps(adata: anndata.AnnData,
     plt.figure(figsize=(len(all_dists)/1.5,5))
     leg=[]
     for i in sbtps:
-        y=dst_df.iloc[:,dst_df.columns.get_level_values(1)==i].mean().values
+        y=dst_df.iloc[:,dst_df.columns.get_level_values(1)==i].median().values
         plt.plot(all_dists,y)
 
-    plt.legend(sbtps, loc=(1,.4), edgecolor='black')
+    mx=len(max(sbtps,key=len))
+    if mx<10:
+        shift=1+mx*0.026
+    else:
+        shift=1+mx*0.017
+    plt.legend(sbtps, bbox_to_anchor=(shift,1), loc='upper right', edgecolor='black')
     plt.xticks(all_dists,[i*100 for i in all_dists])
     plt.xlabel('Distance, micrometers')
-    plt.ylabel('Mean number of cells')
+    if type_of_feature_mtx=='gex':
+        plt.ylabel('Expression value')
+    else:
+        plt.ylabel('Number of cells')
     plt.title(f'{sample}')
 
     for i in sbtps:
@@ -233,9 +254,11 @@ def plot_ngh_cmps(adata: anndata.AnnData,
     plt.show()
     
 def plot_neighborhood_composition(adata: anndata.AnnData,
-                                  deconv: pd.DataFrame,
+                                  feature_mtx: pd.DataFrame,
+                                  type_of_feature_mtx: str,
                                   sample_obs_key: Union[str,None],
                                   samples: Union[List,None]=None,
+                                  subtypes: list=None,
                                   noncumulative: bool=True,
                                   intra: bool=False) -> None:
     '''
@@ -245,15 +268,19 @@ def plot_neighborhood_composition(adata: anndata.AnnData,
     -----------
     adata : anndata.AnnData 
         AnnData with one or more images.
-    deconv : pd.DataFrame 
-        pd.DataFrame with barcodes in rows 
-        and deconvoluted cell subtypes in columns.
+    feature_mtx : pd.DataFrame 
+        pd.DataFrame with barcodes in rows and features in columns.
+        For example, deconvolution or gene expression matrix.
+    type_of_feature_mtx : str
+        could be `deconvolution` or `gex`.
     sample_obs_key : str 
         .obs name where sample names are stored. 
         If you do not have such field, pass `None`.
     samples : list, optional (Default is `None`)
         Names of specific samples you want to plot in AnnData. 
         Default is to plot for all samples.
+    subtypes : list, optional (Default is `None`)
+        list of cell types you want to visualise.
     noncumulative : bool, optional (Default is `True`)
         Whether to plot noncumulative (True) or cumulative (False) neighborhood.
     intra : bool, optional (Default is `False`) 
@@ -265,7 +292,8 @@ def plot_neighborhood_composition(adata: anndata.AnnData,
     '''
     
     if sample_obs_key is None:
-        plot_ngh_cmps(adata,deconv,noncumulative,None,intra)
+        plot_ngh_cmps(adata,feature_mtx,type_of_feature_mtx,\
+                      noncumulative,None,subtypes,intra)
         return None
     
     if samples: samples_list=samples
@@ -278,7 +306,8 @@ def plot_neighborhood_composition(adata: anndata.AnnData,
             for s,v in adatatmp.uns['spatial'].items() \
             if s==sample
         }
-        plot_ngh_cmps(adatatmp,deconv,noncumulative,sample,intra)
+        plot_ngh_cmps(adatatmp,feature_mtx,type_of_feature_mtx,\
+                      noncumulative,sample,subtypes,intra)
         
 # code for plotting receptor-ligand interactions
         

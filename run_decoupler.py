@@ -337,7 +337,7 @@ def get_activities_per_group(acts: anndata.AnnData,
         pd.DataFrame with activities per certain group.
     '''
     
-    return dc.summarize_acts(acts,groupby=group_name,mode=mode,min_std=0.35)
+    return dc.summarize_acts(acts,groupby=group_name,mode=mode,min_std=0)
 
 def get_series_w_lists(series: pd.Series) -> pd.Series:
     '''
