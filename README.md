@@ -1,6 +1,6 @@
-# Visium analysis
+# Usage and tutorials
 
-This is an example of how you can treat visium slides.
+This is an example of how you can work with visium slides.
 
 `visium_example.ipynb` file contains an example of Python Notebook 
 for visium slides analysis.
@@ -24,3 +24,9 @@ comparing top expressed receptor-ligand pairs.
 [DoRothEA](https://doi.org/10.1101%2Fgr.240663.118), 
 [CytoSig](https://doi.org/10.1038/s41592-021-01274-5) and 
 [MSigDB](https://doi.org/10.1073/pnas.0506580102) collections on all spots.
+
+# Installation
+
+We suggest using a separate python virtual environment  
+for the package. You can install it using pip:  
+`pip install git+https://github.com/ismms-himc/visium_analysis.git`.

@@ -17,8 +17,9 @@ plt.rcParams['figure.figsize'] = (5,5)
 
 def gen_spot_circle(spot: np.array,
                     spot_scalefactor: float,
-                    n: int) -> Tuple[int,int,float]:
+                    n: int) -> Tuple[float,float,float]:
     # spot_scalefactor is the theoritcal distance between centers of spots
+    assert len(spot)==2
     spot_distance=spot_scalefactor*n
     error=0
     center_x,center_y=spot[0],spot[1]
