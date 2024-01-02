@@ -7,7 +7,7 @@ import seaborn as sns
 import squidpy as sq
 import matplotlib.pyplot as plt
 
-from distance import prepare_ngh_composition
+from visium_analysis.distance import prepare_ngh_composition
 
 from typing import Tuple,List,Optional,Union
 
