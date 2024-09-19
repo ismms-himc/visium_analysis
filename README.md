@@ -1,3 +1,8 @@
+# Informing biologically relevant signal from spatial transcriptomic data
+
+Deposited in bioRxiv: https://www.biorxiv.org/content/10.1101/2024.09.09.610361v1  
+doi: https://doi.org/10.1101/2024.09.09.610361
+
 # Usage and tutorials
 
 This is an example of how you can work with Visium slides.
