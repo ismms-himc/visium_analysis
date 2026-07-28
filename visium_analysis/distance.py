@@ -896,7 +896,7 @@ def calc_lm(data: pd.DataFrame,
                                         f'1+C(distance,Treatment({mindist}))')
     else: 
         formula = f'value ~ C(distance,Treatment({mindist}))'
-        model = sm.GLM.from_formula(formula, data=data, family=sm.families.NegativeBinomial())
+        model = sm.GLM.from_formula(formula, data=data, family=sm.families.NegativeBinomial(alpha=1))
     try: result = model.fit()
     except: return np.nan
 
