@@ -29,6 +29,8 @@ def prep_data(adata: anndata.AnnData) -> anndata.AnnData:
         AnnData with calculated PCA and UMAP.
     '''
     
+    adata.var_names_make_unique()
+
     print('Normalizing, log-transforming.')
     sc.pp.normalize_total(adata,target_sum=1e6)
     sc.pp.log1p(adata)
@@ -66,8 +68,8 @@ def calc_progeny(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData
-        AnnData with .obsm['progeny_mlm_estimate'] 
-        and .obsm['progeny_mlm_pvals'].
+        AnnData with .obsm['progeny_score_mlm'] 
+        and .obsm['progeny_padj_mlm'].
     '''
     
     if not precomp: prep_data(adata)
@@ -75,16 +77,15 @@ def calc_progeny(adata: anndata.AnnData,
     prg=check_preloaded_db('progeny')
     if prg is None:
         print('Loading progeny.')
-        prg=dc.get_progeny(organism='human',top=100)
+        prg=dc.op.progeny(organism='human',top=100)
         print('Saving progeny to `preloaded_dbs`.')
         prg.to_csv('preloaded_dbs/progeny.csv')
         
     print('Running progeny')
-    dc.run_mlm(mat=adata, net=prg, source='source', target='target', 
-               weight='weight', verbose=True, use_raw=False)
-    adata.obsm['progeny_mlm_estimate']=adata.obsm['mlm_estimate']
-    adata.obsm['progeny_mlm_pvals']=adata.obsm['mlm_pvals']
-    del adata.obsm['mlm_estimate']; del adata.obsm['mlm_pvals']
+    dc.mt.mlm(data=adata, net=prg, verbose=True, raw=False)
+    adata.obsm['progeny_score_mlm']=adata.obsm['score_mlm']
+    adata.obsm['progeny_padj_mlm']=adata.obsm['padj_mlm']
+    del adata.obsm['score_mlm']; del adata.obsm['padj_mlm']
     
     return adata
 
@@ -103,8 +104,8 @@ def calc_dorothea(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData
-        AnnData with .obsm['dorothea_mlm_estimate'] 
-        and .obsm['dorothea_mlm_pvals']
+        AnnData with .obsm['dorothea_score_mlm'] 
+        and .obsm['dorothea_padj_mlm']
     '''
     
     if not precomp: prep_data(adata)
@@ -117,11 +118,10 @@ def calc_dorothea(adata: anndata.AnnData,
         drt.to_csv('preloaded_dbs/dorothea.csv')
     
     print('Running dorothea')
-    dc.run_mlm(mat=adata, net=drt, source='source', target='target', 
-               weight='weight', verbose=True, use_raw=False)
-    adata.obsm['dorothea_mlm_estimate']=adata.obsm['mlm_estimate']
-    adata.obsm['dorothea_mlm_pvals']=adata.obsm['mlm_pvals']
-    del adata.obsm['mlm_estimate']; del adata.obsm['mlm_pvals']
+    dc.mt.mlm(data=adata, net=drt, verbose=True, raw=False)
+    adata.obsm['dorothea_score_mlm']=adata.obsm['score_mlm']
+    adata.obsm['dorothea_padj_mlm']=adata.obsm['padj_mlm']
+    del adata.obsm['score_mlm']; del adata.obsm['padj_mlm']
     
     return adata
 
@@ -140,8 +140,8 @@ def calc_cytosig(adata: anndata.AnnData,
     Returns:
     --------
     anndata.AnnData
-        AnnData with .obsm['cytosig_mlm_estimate'] 
-        and .obsm['cytosig_mlm_pvals']
+        AnnData with .obsm['cytosig_score_mlm'] 
+        and .obsm['cytosig_padj_mlm']
     '''
     
     if not precomp: prep_data(adata)
@@ -149,19 +149,21 @@ def calc_cytosig(adata: anndata.AnnData,
     cts=check_preloaded_db('cytosig')
     if cts is None:
         print('Loading CytoSig.')
-        cts=dc.get_resource('CytoSig')
+        cts=dc.op.resource(name='CytoSig')
         cts=cts[~cts.duplicated(['cytokine_genesymbol','target_genesymbol'])]
         cts['score']=cts['score'].astype(float)
+        col_rename = {'cytokine_genesymbol':'source', 
+                      'target_genesymbol':'target', 
+                      'score':'weight'}
+        cts.rename(columns=col_rename, inplace=True)
         print('Saving CytoSig to `preloaded_dbs`.')
         cts.to_csv('preloaded_dbs/cytosig.csv')
     
     print('Running CytoSig')
-    dc.run_mlm(mat=adata, net=cts, source='cytokine_genesymbol', 
-               target='target_genesymbol', 
-               weight='score', verbose=True, use_raw=False)
-    adata.obsm['cytosig_mlm_estimate']=adata.obsm['mlm_estimate']
-    adata.obsm['cytosig_mlm_pvals']=adata.obsm['mlm_pvals']
-    del adata.obsm['mlm_estimate']; del adata.obsm['mlm_pvals']
+    dc.mt.mlm(data=adata, net=cts, verbose=True, raw=False)
+    adata.obsm['cytosig_score_mlm']=adata.obsm['score_mlm']
+    adata.obsm['cytosig_padj_mlm']=adata.obsm['padj_mlm']
+    del adata.obsm['score_mlm']; del adata.obsm['padj_mlm']
     
     return adata
 
@@ -196,7 +198,7 @@ def calc_msigdb(adata: anndata.AnnData,
     msg=check_preloaded_db('msigdb')
     if msg is None:
         print('Loading MSigDB.')
-        msg=dc.get_resource('MSigDB')
+        msg=dc.op.resource('MSigDB')
         print('Saving MSigDB to `preloaded_dbs`.')
         msg.to_csv('preloaded_dbs/msigdb.csv')
     
@@ -220,9 +222,9 @@ def calc_msigdb(adata: anndata.AnnData,
         if ora:
             print('Running ora')
             try:
-                dc.run_ora(mat=adata, net=msg_col, source='geneset', 
-                           target='genesymbol', 
-                           verbose=True, use_raw=False)
+                msg_col.rename(columns={'geneset':'source', 'genesymbol':'target'}, 
+                               inplace=True)
+                dc.mt.ora(data=adata, net=msg_col, verbose=True, raw=False)
             except ValueError as e:
                 print(f'{e}\nContinue with the next collection.')
                 continue
@@ -232,9 +234,7 @@ def calc_msigdb(adata: anndata.AnnData,
         else:
             print('Running GSEA')
             try:
-                dc.run_gsea(mat=adata, net=msg_col, source='geneset', 
-                            target='genesymbol', 
-                            verbose=True, use_raw=False)
+                dc.mt.gsea(data=adata, net=msg_col, verbose=True, raw=False)
             except ValueError as e:
                 print(f'{e}\nContinue with the next collection.')
                 continue
@@ -313,7 +313,7 @@ def get_activities(adata: anndata.AnnData,
         AnnData object of specified .obsm object.
     '''
     
-    return dc.get_acts(adata, obsm_key=obsm_key)
+    return dc.pp.get_obsm(adata, obsm_key=obsm_key)
 
 def get_activities_per_group(acts: anndata.AnnData,
                              group_name: str,
@@ -337,7 +337,15 @@ def get_activities_per_group(acts: anndata.AnnData,
         pd.DataFrame with activities per certain group.
     '''
     
-    return dc.summarize_acts(acts,groupby=group_name,mode=mode,min_std=0)
+    df = acts.to_df()
+    df[group_name] = acts.obs[group_name].values
+
+    if mode == 'mean':
+        return df.groupby(group_name).mean()
+    elif mode == 'median':
+        return df.groupby(group_name).median()
+    else:
+        raise ValueError(f"Mode '{mode}' is invalid. Choose 'mean' or 'median'.")
 
 def get_series_w_lists(series: pd.Series) -> pd.Series:
     '''
@@ -380,14 +388,14 @@ def get_geneset_pairs(adata: anndata.AnnData,
     prg=check_preloaded_db('progeny')
     if prg is None:
         print('Loading progeny.')
-        prg=dc.get_progeny(organism='human',top=100)
+        prg=dc.op.progeny(organism='human',top=100)
         print('Saving progeny to `preloaded_dbs`.')
         prg.to_csv('preloaded_dbs/progeny.csv')
     
     drt=check_preloaded_db('dorothea')
     if drt is None:
         print('Loading dorothea.')
-        drt=dc.get_dorothea(organism='human',levels=['A','B','C'])
+        drt=dc.op.dorothea(organism='human',levels=['A','B','C'])
         print('Saving dorothea to `preloaded_dbs`.')
         drt.to_csv('preloaded_dbs/dorothea.csv')
 
@@ -399,7 +407,7 @@ def get_geneset_pairs(adata: anndata.AnnData,
         msg=check_preloaded_db('msigdb')
         if msg is None:
             print('Loading MSigDB.')
-            msg=dc.get_resource('MSigDB')
+            msg=dc.op.resource('MSigDB')
             print('Saving MSigDB to `preloaded_dbs`.')
             msg.to_csv('preloaded_dbs/msigdb.csv')
 

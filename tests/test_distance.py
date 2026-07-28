@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -29,15 +30,17 @@ def test_calc_lm_func():
     calc_lm_df=gen_data_for_lm(ad,'Sox17','')
     '''
 
+    test_dir = Path(__file__).parent
+
     # load predefined dataset with expected results
-    calc_lm_df=pd.read_csv('data/test_calc_lm.csv',index_col=0)
+    calc_lm_df=pd.read_csv(f'{test_dir}/data/test_calc_lm.csv',index_col=0)
     pv_expected=\
     [3.770258657226368e-09,
      0.20055055318735338,
      0.7892467284945289,
      0.636560347915213,
      0.7397360658409451]
-    regression_expected=pd.read_csv('data/expected_calc_lm.csv',index_col=0)['0']\
+    regression_expected=pd.read_csv(f'{test_dir}/data/expected_calc_lm.csv',index_col=0)['0']\
     .values.tolist()
     # round all floats
     pv_expected_round=[round(pv,5) for pv in pv_expected]

@@ -4,7 +4,9 @@ Author: Emir Radkevich
 Deposited in bioRxiv: https://www.biorxiv.org/content/10.1101/2024.09.09.610361v1  
 doi: https://doi.org/10.1101/2024.09.09.610361  
 
-Used in a 2026 _Science_ [publication](https://www.science.org/doi/10.1126/science.ady1678).
+Used in a 2026 _Science_ [publication](https://www.science.org/doi/10.1126/science.ady1678).  
+
+[Example](https://github.com/emir-radkevich/squidpy_notebooks/blob/add-neighborhood-notebook/tutorials/tutorial_neighborhood.ipynb) on how to use it. Pending [PR](https://github.com/scverse/squidpy-tutorials/pull/144) to `squidpy_notebooks`. 
 
 # Usage and tutorials
 
@@ -36,7 +38,20 @@ Python library to calculate **pathways** activities from different databases suc
 
 # Installation
 
-We suggest using a separate python virtual environment for the package.\
-You can install it using pip:  
-`pip install git+https://github.com/ismms-himc/visium_analysis.git`.\
+We suggest using a separate conda environment for the package:  
+
+```
+conda create --name va python=3.12
+conda activate va
+pip install git+https://github.com/ismms-himc/visium_analysis.git
+```  
+
+Or it can be installed in a python virtual environment:  
+```
+mkdir venvs && cd venvs
+python3.12 -m venv va
+source va/bin/activate
+pip install git+https://github.com/ismms-himc/visium_analysis.git
+```    
+
 All the necessary Python packages are listed in `setup.cfg` file.
