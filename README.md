@@ -1,42 +1,48 @@
-# Informing biologically relevant signal from spatial transcriptomic data
+# visium_analysis
 
-Author: Emir Radkevich  
-Deposited in bioRxiv: https://www.biorxiv.org/content/10.1101/2024.09.09.610361v1  
-doi: https://doi.org/10.1101/2024.09.09.610361  
+[![bioRxiv](https://img.shields.io/badge/bioRxiv-10.1101%2F2024.09.09.610361-B31B1B.svg)](https://doi.org/10.1101/2024.09.09.610361)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 
-Used in a 2026 _Science_ [publication](https://www.science.org/doi/10.1126/science.ady1678).  
+> **Informing biologically relevant signal from spatial transcriptomic data**
 
-[Example](https://github.com/emir-radkevich/squidpy_notebooks/blob/add-neighborhood-notebook/tutorials/tutorial_neighborhood.ipynb) on how to use it. Pending [PR](https://github.com/scverse/squidpy-tutorials/pull/144) to `squidpy_notebooks`. 
+`visium_analysis` is a Python tool for downstream processing of Visium spatial transcriptomics data. It enables neighborhood distance analysis, cell-type deconvolution evaluation, and pathway activity scoring across spatial spots.
 
-# Usage and tutorials
+---
 
-This is an example of how you can work with Visium slides.
+## Reference and Links
 
-`visium_analysis` folder contains all the necessary code to run the downstream 
-analysis on Visium slides and consists of a few Python scripts:
+* **Author:** Emir Radkevich
+* **Preprint:** [bioRxiv (2024.09.09.610361)](https://www.biorxiv.org/content/10.1101/2024.09.09.610361v1) | **DOI:** [10.1101/2024.09.09.610361](https://doi.org/10.1101/2024.09.09.610361)
+* **Publication:** Used in a 2026 *Science* [publication](https://science.org).
+* **Claude skill:** [Link](https://github.com/emir-radkevich/claude-skills/tree/main/visium-gradient-analysis) to the skill.
+* **Tutorials & Extensions:** Example notebooks are available below and pending pull request to [`squidpy_notebooks`](https://github.com/emir-radkevich/squidpy_notebooks/blob/add-neighborhood-notebook/tutorials/tutorial_neighborhood.ipynb).
 
-1. `distance.py` performs  **neighborhood** analysis. You can pick all spots at a certain 
-distance from area of interest (with an increment of 100 micrometers). 
-It works outside the defined area and inside, so you can assess the neighborhood, 
-as well as the core of the area. You can plot cell composition of the neighborhood over the distance.
-You can also assess how gene expression changes over the distance using linear regression analysis.
+--- 
 
-2. `deconvolution.py` utilizes **deconvolution** results to calculate PCA, 
-UMAP and compare obtained results to results based on gene expression.
-If you have structurally-resolved compartment, like immune aggregates, you can 
-assess the difference between them on a slide by: 
-- calculating cell composition; 
-- calculating Mann-Whitney U-test for one immune aggregate vs other for every cell type; 
-- calculating expression of receptor-ligand pairs inside immune aggregates.
+## Usage and Workflow
 
-3. `run_decoupler.py` uses [decoupler](https://doi.org/10.1093/bioadv/vbac016) 
-Python library to calculate **pathways** activities from different databases such as 
-[PROGENy](https://doi.org/10.1038/s41467-017-02391-6), 
-[DoRothEA](https://doi.org/10.1101%2Fgr.240663.118), 
-[CytoSig](https://doi.org/10.1038/s41592-021-01274-5) and 
-[MSigDB](https://doi.org/10.1073/pnas.0506580102) on all Visium spots.
+The `visium_analysis/` directory contains the core scripts to perform downstream analysis on Visium spatial transcriptomics slides:
 
-# Installation
+### 1. Spatial Neighborhood Analysis (`distance.py`)
+Analyzes cell distribution and gene expression dynamics as a function of radial distance from a region of interest (in 100 um increments, moving both inward and outward):
+* **Cell Composition:** Maps changes in cell-type composition from the core to surrounding neighborhoods.
+* **Expression Dynamics:** Runs linear regression to track how gene expression changes across spatial distance gradients.
+
+### 2. Deconvolution and Structural Comparison (`deconvolution.py`)
+Uses deconvolution results to compute PCA and UMAP embeddings, comparing structural compartments (e.g., distinct immune aggregates) by:
+* Calculating cell-type proportion differences.
+* Computing **Mann-Whitney U-tests** per cell type across compartments.
+* Assessing expression of key receptor-ligand pairs within aggregates.
+
+### 3. Pathway Activity Scoring (`run_decoupler.py`)
+Leverages [decoupler](https://github.com/saezlab/decoupler-py) to infer footprint-based activity scores across Visium spots using established reference databases:
+* **PROGENy** (Pathway activities)
+* **DoRothEA** (Transcription factor activities)
+* **CytoSig** (Cytokine signaling)
+* **MSigDB** (Molecular signatures)
+
+## Installation
 
 We suggest using a separate conda environment for the package:  
 
