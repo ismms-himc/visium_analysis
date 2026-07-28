@@ -167,6 +167,9 @@ def calc_leiden_on_deconv(adata: anndata.AnnData,
                                  for s,v in adatatmp.uns['spatial'].items()\
                                  if s==sample}
         deconvtmp=deconv.reindex(adatatmp.obs_names)
+        # if some barcodes are missing in deconvolution,
+        # fill them with 0s
+        deconvtmp=deconvtmp.fillna(0)
         sample=f'_{sample}'
         print(f'Running {sample} sample.')
         r.append(calc_leiden(adatatmp,deconvtmp,\

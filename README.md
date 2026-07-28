@@ -1,7 +1,10 @@
 # Informing biologically relevant signal from spatial transcriptomic data
 
+Author: Emir Radkevich  
 Deposited in bioRxiv: https://www.biorxiv.org/content/10.1101/2024.09.09.610361v1  
-doi: https://doi.org/10.1101/2024.09.09.610361
+doi: https://doi.org/10.1101/2024.09.09.610361  
+
+Used in a 2026 _Science_ [publication](https://www.science.org/doi/10.1126/science.ady1678).
 
 # Usage and tutorials
 
