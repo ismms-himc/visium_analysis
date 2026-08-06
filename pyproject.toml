@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visium_analysis"
+version = "0.1.0"
+description = "visium_analysis: An example of how visium slides could be analyzed"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = {name = "Emir Radkevich", email = "emir.radkevich@gmail.com"}
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependecies = [
+    "squidpy>=1.2.0",
+    "decoupler>=2.0.0"
+]
+
+[project.urls]
+Repository = "https://github.com/ismms-himc/visium_analysis.git"
+
+[tool.setuptools.packages.find]
+where = ["visium_analysis"]
+include = ["visium_analysis*"]

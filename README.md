@@ -58,6 +58,4 @@ mkdir venvs && cd venvs
 python3.12 -m venv va
 source va/bin/activate
 pip install git+https://github.com/ismms-himc/visium_analysis.git
-```    
-
-All the necessary Python packages are listed in `setup.cfg` file.
+```
